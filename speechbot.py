@@ -4,6 +4,8 @@ from urllib.parse import urlparse
 import os
 from playsound import playsound
 from threading import Thread
+import tkinter as tk
+from tkinter import scrolledtext, messagebox
 
 # Constants for file paths
 TRIGGER_FILE = "trigger.txt"
@@ -26,10 +28,8 @@ def recognize_speech(prompt):
     try:
         return recognizer.recognize_google(audio).lower()
     except sr.UnknownValueError:
-        print("Sorry, I could not understand the audio.")
         return None
     except sr.RequestError:
-        print("Unable to access the Google Speech Recognition API.")
         return None
 
 # Function to read key-value pairs from a text file and return a dictionary
@@ -94,52 +94,84 @@ def play_sound(file_path):
     else:
         print(f"Sound file not found: {file_path}")
 
-# Main function
-def main():
-    # Load trigger words, URLs, and shortcuts
-    if not all(os.path.isfile(file) for file in [TRIGGER_FILE, URL_FILE, SHORTCUT_FILE]):
-        print("One or more required files are missing. Please check the file paths.")
-        return
+# GUI Application
+class ChatbotApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Voice-Controlled Chatbot")
+        self.root.geometry("600x400")
 
-    with open(TRIGGER_FILE) as file:
-        trigger_words = file.read().splitlines()
-    
-    url_dict = read_dict_from_file(URL_FILE)
-    shortcut_dict = read_dict_from_file(SHORTCUT_FILE)
+        # Load trigger words, URLs, and shortcuts
+        if not all(os.path.isfile(file) for file in [TRIGGER_FILE, URL_FILE, SHORTCUT_FILE]):
+            messagebox.showerror("Error", "One or more required files are missing. Please check the file paths.")
+            self.root.destroy()
+            return
 
-    if not url_dict or not shortcut_dict:
-        print("Failed to read one of the required files.")
-        return
+        with open(TRIGGER_FILE) as file:
+            self.trigger_words = file.read().splitlines()
+        
+        self.url_dict = read_dict_from_file(URL_FILE)
+        self.shortcut_dict = read_dict_from_file(SHORTCUT_FILE)
 
-    play_sound(WELCOME_SOUND)
+        if not self.url_dict or not self.shortcut_dict:
+            messagebox.showerror("Error", "Failed to read one of the required files.")
+            self.root.destroy()
+            return
 
-    while True:
+        # GUI Elements
+        self.log_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, state='disabled')
+        self.log_area.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+
+        self.start_button = tk.Button(root, text="Start Listening", command=self.start_listening)
+        self.start_button.pack(pady=10)
+
+        self.exit_button = tk.Button(root, text="Exit", command=self.root.destroy)
+        self.exit_button.pack(pady=10)
+
+        # Play welcome sound
+        play_sound(WELCOME_SOUND)
+        self.log("Welcome to the Voice-Controlled Chatbot!")
+
+    def log(self, message):
+        self.log_area.config(state='normal')
+        self.log_area.insert(tk.END, message + "\n")
+        self.log_area.config(state='disabled')
+        self.log_area.yview(tk.END)
+
+    def start_listening(self):
+        self.log("Listening for trigger words...")
         command = recognize_speech("Say the trigger words: ")
-        if command and any(trigger in command for trigger in trigger_words):
+        if command and any(trigger in command for trigger in self.trigger_words):
             play_sound(TRIGGER_SOUND)
-            print("Trigger detected. Listening for command...")
+            self.log("Trigger detected. Listening for command...")
 
             while True:
                 actual_command = recognize_speech("Say the command: ")
                 if not actual_command:
-                    print("Invalid command. Please try again.")
+                    self.log("Invalid command. Please try again.")
                     continue
 
                 if "exit" in actual_command or "quit" in actual_command:
-                    print("Exiting the chatbot. Goodbye!")
+                    self.log("Exiting the chatbot. Goodbye!")
+                    self.root.destroy()
                     return
 
                 if "start" in actual_command or "launch" in actual_command:
-                    if open_program(actual_command, shortcut_dict):
+                    if open_program(actual_command, self.shortcut_dict):
+                        self.log(f"Launched program: {actual_command}")
                         break
                     else:
-                        print("Invalid program name. Please try again.")
+                        self.log("Invalid program name. Please try again.")
                 else:
-                    open_url(actual_command, url_dict)
+                    open_url(actual_command, self.url_dict)
                     play_sound(SUCCESS_SOUND)
+                    self.log(f"Opened URL: {actual_command}")
                     break
         else:
-            print("No valid trigger detected. Please try again.")
+            self.log("No valid trigger detected. Please try again.")
 
+# Main function
 if __name__ == "__main__":
-    main()
+    root = tk.Tk()
+    app = ChatbotApp(root)
+    root.mainloop()
